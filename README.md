@@ -3,7 +3,7 @@
 Script for mirroring all repositories of an organization from Github to AWS CodeCommit. This script is intended to run as a cronjob, typically.
 
 ## Installation
-Python >= 3.5 is required.
+Python >= 3.5 is required. The command **gh-cc-mirror** will get installed.
 
 ```sh
 pip install gh-cc-mirror
@@ -12,6 +12,7 @@ pip install gh-cc-mirror
 ## Usage
 
 ```sh
+$ gh-cc-mirror -h
 usage:
 
 This command will mirror all repositories of an organization from Github to AWS CodeCommit.

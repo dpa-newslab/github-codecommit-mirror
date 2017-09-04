@@ -49,6 +49,31 @@ required named arguments:
                         Github organization
 ```
 
+## Authentication
+
+Git connections to **Github** and **AWS CodeCommit** are made via **https://**. For authentication at Github, a [Personal Access Token](https://github.com/settings/tokens) is needed. [HTTPS credentials for CodeCommit](https://docs.aws.amazon.com/codecommit/latest/userguide/setting-up-gc.html) have to be generated via [AWS IAM](https://console.aws.amazon.com/iam/home).
+
+## IAM rules
+
+Access rights needed by AWS, for listing and creating CodeCommit repositoires:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "codecommit:CreateRepository",
+                "codecommit:List*"
+            ],
+            "Resource": "*"
+        }
+    ]
+}
+
+
+```
 ## License
 Copyright 2017 dpa-infocom GmbH
 

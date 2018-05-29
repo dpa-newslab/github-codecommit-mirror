@@ -43,9 +43,9 @@ parser = argparse.ArgumentParser(arg_desc)
 required = parser.add_argument_group('required named arguments')
 required.add_argument("--cc-user", help="CodeCommit user name", required=True)
 required.add_argument("--cc-password", help="CodeCommit password", required=True)
-required.add_argument("--github-user", help="Github user account", required=True)
-required.add_argument("--github-token", help="Github personal API access token", required=True)
-required.add_argument("--github-organization", help="Github organization", required=True)
+required.add_argument("--gitlab-token", help="Gitlab personal API access token", required=True)
+required.add_argument("--gitlab-groups", help="Gitlab groups, comma-separated string of groupd ids.", required=True)
+parser.add_argument("--gitlab-host", help="Gitlab host, default https://gitlab.com", default="https://gitlab.com")
 parser.add_argument("--dir", help="Working directory")
 parser.add_argument("--aws-access-key", help="AWS access key")
 parser.add_argument("--aws-secret-access-key", help="AWS secret access key")
@@ -71,27 +71,27 @@ class GitSync(object):
     aws_client = aws_client
     cc_user = args.cc_user
     cc_password = args.cc_password
-    gh_user = args.github_user
-    gh_token = args.github_token
-    gh_org = args.github_organization
+    gl_host= args.gitlab_host
+    gl_token = args.gitlab_token
+    gl_groups = args.gitlab_groups.split(",")
     within = int(args.pushed_within) if args.pushed_within else None
 
     def _get_diff_last_update(self, date_str):
-        diff = (datetime.utcnow()-datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ"))
+        diff = (datetime.utcnow()-datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%fZ"))
         return diff.total_seconds()/60
 
-    def _get_gh_query(self):
-        return """query {organization(login:"%s") {repositories(
-                    last:100, isFork: false,
-                    orderBy: { field: PUSHED_AT, direction: DESC }
-                ) {edges {node { name, description, pushedAt}}}}}""" % (self.gh_org)
-
-    def _get_gh_repos(self):
-        query = {"query": self._get_gh_query()}
-        response = requests.post('https://api.github.com/graphql', json=query,
-                                auth=HTTPBasicAuth(self.gh_user, self.gh_token))
-        response.raise_for_status()
-        return response.json()
+    def _get_gl_repos(self):
+        repos = []
+        headers = {
+            "private-token": self.gl_token,
+        }
+        for group_id in self.gl_groups:
+            response = requests.get(
+                '{}/api/v4/groups/{}/projects?simple=true'.format(self.gl_host, group_id),
+                headers=headers)
+            response.raise_for_status()
+            repos = repos + response.json()
+        return repos
 
     def _get_aws_repos(self):
         aws_repos = []
@@ -100,23 +100,24 @@ class GitSync(object):
         return aws_repos
 
     def run_sync(self):
-        gh_repos = self._get_gh_repos()
-        for repo in gh_repos.get("data",{}).get("organization",{}).get("repositories",{}).get("edges", {}):
-            if self.within and self._get_diff_last_update(repo["node"]["pushedAt"]) > self.within:
+        gl_repos = self._get_gl_repos()
+        for repo in gl_repos:#.get("data",{}).get("organization",{}).get("repositories",{}).get("edges", {}):
+            if self.within and self._get_diff_last_update(repo["last_activity_at"]) > self.within:
                 # if within specified, do filtering
                 continue
-            logger.info("Handling {}, last pushed at {}".format(repo["node"]["name"], repo["node"]["pushedAt"]))
-            repository = Repository(repo["node"]["name"], repo["node"]["description"], repo["node"]["pushedAt"])
+            logger.info("Handling {}, last pushed at {}".format(repo["name"], repo["last_activity_at"]))
+            repository = Repository(repo)
             repository.sync()
 
 
 class Repository(GitSync):
 
-    def __init__(self, name, desc, pushed_at):
-        self.name = name
-        self.desc = desc
-        self.pushed_at = pushed_at
-        self.repo_dir = "{}.git".format(self.name)
+    def __init__(self, repo):
+        self.name = "gitlab-{}".format(repo["name"])
+        self.desc = repo["description"]
+        self.pushed_at = repo["last_activity_at"]
+        self.https_url = repo["http_url_to_repo"].replace("https://", "https://gitlab-ci-token:{}@".format(self.gl_token))
+        self.repo_dir = "{}.git".format(repo["name"])
         self.aws_repos = self._get_aws_repos()
 
     def sync(self):
@@ -127,13 +128,12 @@ class Repository(GitSync):
     def _handle_local_clone(self):
         if not os.path.exists(self.repo_dir):
             logger.info("\t* Creating local bare clone for {}".format(self.name))
-            Git().clone("--bare", "https://{user}:{pwd}@github.com/{org}/{name}.git".format(
-                                    user=self.gh_user,
-                                    pwd=self.gh_token,
-                                    org=self.gh_org,
-                                    name=self.name))
+            os.mkdir(self.repo_dir)
+            Git().clone("--bare", self.https_url)
         else:
             logger.info("\t* Fetching updates for repository {}".format(self.name))
+            logger.info(self.https_url)
+            logger.info(self.repo_dir)
             g = Repo(self.repo_dir).git
             g.fetch("origin",  "+refs/heads/*:refs/heads/*", "--prune")
 
@@ -149,7 +149,7 @@ class Repository(GitSync):
     def _push_to_mirror(self):
         logger.info("\t* Mirror local bare clone {}".format(self.name))
         g = Repo(self.repo_dir).git
-        g.push("--mirror",  "https://{user}:{pwd}@git-codecommit.eu-central-1.amazonaws.com/v1/repos/{name}".format(
+        resp = g.push("--mirror",  "https://{user}:{pwd}@git-codecommit.eu-central-1.amazonaws.com/v1/repos/{name}".format(
                     user=self.cc_user, pwd=self.cc_password, name=self.name
         ))
 

@@ -1,6 +1,8 @@
 # Github - Gitlab - AWS CodeCommit - Mirror
 
-CLI-Commands for mirroring all repositories of an organization/group from **Github** or **Gitlab** to **AWS CodeCommit**. These commands are intended to run as a cronjob, typically.
+CLI-Commands for mirroring all repositories of a **Github** organization or a **Gitlab** group to **AWS CodeCommit**. 
+
+These commands are intended to run as a cronjob, typically.
 
 ## Installation
 Python >= 3.5 is required. 

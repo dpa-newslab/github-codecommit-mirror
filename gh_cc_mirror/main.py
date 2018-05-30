@@ -43,6 +43,56 @@ class MirrorRepo:
         self.https_url = https_url
         self.dir = repo_dir
 
+class Github(object):
+
+    def __init__(self, token, org, user, within=None):
+        self.token = token
+        self.org = org
+        self.user = user
+        self.within = within
+
+    def _get_diff_last_update(self, date_str):
+        diff = (datetime.utcnow()-datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ"))
+        return diff.total_seconds()/60
+
+    def _filter(self, repos):
+        result = []
+        for repo in repos:
+            # filter within time range
+            last_updated = repo["node"]["pushedAt"]
+            if self.within and self._get_diff_last_update(last_updated) > self.within:
+                continue
+
+            # make repo object
+            name = repo["node"]["name"]
+            https_url = "https://{user}:{pwd}@github.com/{org}/{name}.git".format(
+                                    user=self.user,
+                                    pwd=self.token,
+                                    org=self.org,
+                                    name=name)
+            repo_dir = "{}.git".format(name)
+
+            result.append(
+                MirrorRepo(name, repo["node"]["description"], last_updated, https_url, repo_dir)
+            )
+        return result
+
+    def _get_query(self):
+        return """query {organization(login:"%s") {repositories(
+                    last:100, isFork: false,
+                    orderBy: { field: PUSHED_AT, direction: DESC }
+                ) {edges {node { name, description, pushedAt}}}}}""" % (self.org)
+
+    def get_repos(self):
+        query = {"query": self._get_query()}
+        response = requests.post('https://api.github.com/graphql', json=query,
+                                auth=HTTPBasicAuth(self.user, self.token))
+        response.raise_for_status()
+        api_res = response.json()
+
+        repos = api_res.get("data",{}).get("organization",{}).get("repositories",{}).get("edges", {})
+        return self._filter(repos)
+
 class Gitlab(object):
 
     def __init__(self, token, groups, host, within=None):
@@ -143,33 +193,54 @@ class GitSync(object):
 
     def __init__(self, aws_client, args):
         self.cc = CodeCommit(aws_client, args.cc_user, args.cc_password)
+        self.source = None
 
         within = int(args.pushed_within) if args.pushed_within else None
-        if args.gitlab_token:
-            self.source = Gitlab(args.gitlab_token, args.gitlab_groups, args.gitlab_host, within)
-        else:
-            assert 1 == 0
-            #self.source = Gitlab(args.gitlab_token, args.gitlab_groups, args.gitlab_host, within)
+        if hasattr(args, "gitlab_token"):
+            self.source = Gitlab(
+                args.gitlab_token, args.gitlab_groups, args.gitlab_host, within
+            )
+        elif hasattr(args, "github_token"):
+            self.source = Github(
+                args.github_token, args.github_organization, args.github_user, within
+            )
+        assert self.source is not None
 
     def run_sync(self):
         gl_repos = self.source.get_repos()
         for repo in gl_repos:
             logger.info("Handling {}, last pushed at {}".format(repo.name, repo.last_updated))
             self.cc.mirror(repo)
+            return
 
-def main():
-    # read cli arguments
+
+def main_gitlab():
     arg_desc = """\n
-    This command will mirror all repositories of an organization from Github to AWS CodeCommit. 
+    This command will mirror all repositories of groups from Gitlab to AWS CodeCommit.
     This script is intended to run as a cronjob, typically.
     """
     parser = argparse.ArgumentParser(arg_desc)
     required = parser.add_argument_group('required named arguments')
-    required.add_argument("--cc-user", help="CodeCommit user name", required=True)
-    required.add_argument("--cc-password", help="CodeCommit password", required=True)
     required.add_argument("--gitlab-token", help="Gitlab personal API access token", required=True)
     required.add_argument("--gitlab-groups", help="Gitlab groups, comma-separated string of groupd ids.", required=True)
     parser.add_argument("--gitlab-host", help="Gitlab host, default https://gitlab.com", default="https://gitlab.com")
+    run(parser, required)
+
+def main_github():
+    arg_desc = """\n
+    This command will mirror all repositories of an organization from Github to AWS CodeCommit.
+    This script is intended to run as a cronjob, typically.
+    """
+    parser = argparse.ArgumentParser(arg_desc)
+    required = parser.add_argument_group('required named arguments')
+    required.add_argument("--github-user", help="Github user account", required=True)
+    required.add_argument("--github-token", help="Github personal API access token", required=True)
+    required.add_argument("--github-organization", help="Github organization", required=True)
+    run(parser, required)
+
+def run(parser, required):
+    required.add_argument("--cc-user", help="CodeCommit user name", required=True)
+    required.add_argument("--cc-password", help="CodeCommit password", required=True)
     parser.add_argument("--dir", help="Working directory")
     parser.add_argument("--aws-access-key", help="AWS access key")
     parser.add_argument("--aws-secret-access-key", help="AWS secret access key")
@@ -189,6 +260,3 @@ def main():
 
 
     GitSync(aws_client, args).run_sync()
-
-if __name__ == "__main__":
-    main()

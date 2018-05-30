@@ -43,6 +43,7 @@ setup(name='github-codecommit-mirror',
     ],
     entry_points="""
             [console_scripts]
-            gh-cc-mirror = gh_cc_mirror.main:main
+            gh-cc-mirror = gh_cc_mirror.main:main_github
+            gl-cc-mirror = gh_cc_mirror.main:main_gitlab
     """,
 )

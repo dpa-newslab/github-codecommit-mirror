@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2017 dpa-infocom GmbH
+# Copyright 2017, 2018 dpa-infocom GmbH
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,12 +17,11 @@ import argparse
 import boto3
 import os
 import sys
-import requests
-import time
 import logging
-from requests.auth import HTTPBasicAuth
-from datetime import datetime
-from git import Repo, Git
+
+from .codecommit import CodeCommit
+from .github import Github
+from .gitlab import Gitlab
 
 # setup logging
 logger = logging.getLogger()
@@ -35,164 +34,10 @@ logging.getLogger('botocore').setLevel(logging.ERROR)
 logging.getLogger('git').setLevel(logging.INFO)
 
 
-class MirrorRepo:
-    def __init__(self, name, desc, last_updated, https_url, repo_dir):
-        self.name = name
-        self.last_updated = last_updated
-        self.desc = desc
-        self.https_url = https_url
-        self.dir = repo_dir
-
-class Github(object):
-
-    def __init__(self, token, org, user, within=None):
-        self.token = token
-        self.org = org
-        self.user = user
-        self.within = within
-
-    def _get_diff_last_update(self, date_str):
-        diff = (datetime.utcnow()-datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%SZ"))
-        return diff.total_seconds()/60
-
-    def _filter(self, repos):
-        result = []
-        for repo in repos:
-            # filter within time range
-            last_updated = repo["node"]["pushedAt"]
-            if self.within and self._get_diff_last_update(last_updated) > self.within:
-                continue
-
-            # make repo object
-            name = repo["node"]["name"]
-            https_url = "https://{user}:{pwd}@github.com/{org}/{name}.git".format(
-                                    user=self.user,
-                                    pwd=self.token,
-                                    org=self.org,
-                                    name=name)
-            repo_dir = "{}.git".format(name)
-
-            result.append(
-                MirrorRepo(name, repo["node"]["description"], last_updated, https_url, repo_dir)
-            )
-        return result
-
-    def _get_query(self):
-        return """query {organization(login:"%s") {repositories(
-                    last:100, isFork: false,
-                    orderBy: { field: PUSHED_AT, direction: DESC }
-                ) {edges {node { name, description, pushedAt}}}}}""" % (self.org)
-
-    def get_repos(self):
-        query = {"query": self._get_query()}
-        response = requests.post('https://api.github.com/graphql', json=query,
-                                auth=HTTPBasicAuth(self.user, self.token))
-        response.raise_for_status()
-        api_res = response.json()
-
-        repos = api_res.get("data",{}).get("organization",{}).get("repositories",{}).get("edges", {})
-        return self._filter(repos)
-
-class Gitlab(object):
-
-    def __init__(self, token, groups, host, within=None):
-        self.token = token
-        self.groups = groups.split(",")
-        self.host = host
-        self.within = within
-
-    def _get_diff_last_update(self, date_str):
-        diff = (datetime.utcnow()-datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S.%fZ"))
-        return diff.total_seconds()/60
-
-    def _filter(self, repos):
-        result = []
-        for repo in repos:
-            # filter within time range
-            if self.within and self._get_diff_last_update(repo["last_activity_at"]) > self.within:
-                continue
-
-            # make repo object
-            name = "gitlab-{}".format(repo["name"])
-            https_url = repo["http_url_to_repo"].replace("https://", "https://gitlab-ci-token:{}@".format(self.token))
-            repo_dir = "{}.git".format(repo["name"])
-
-            result.append(
-                MirrorRepo(name, repo["description"], repo["last_activity_at"], https_url, repo_dir)
-            )
-
-        return result
-
-    def get_repos(self):
-        repos = []
-        headers = {
-            "private-token": self.token,
-        }
-        for group_id in self.groups:
-            response = requests.get(
-                '{}/api/v4/groups/{}/projects?simple=true'.format(self.host, group_id),
-                headers=headers)
-            response.raise_for_status()
-            repos = repos + response.json()
-
-        return self._filter(repos)
-
-
-class CodeCommit(object):
-
-    def __init__(self, client, user, password):
-        self.client = client
-        self.user = user
-        self.password = password
-        self.repos = []
-
-    def get_repos(self):
-        if self.repos:
-            return self.repos
-
-        self.repos = []
-        for repo in self.client.list_repositories().get("repositories", []):
-            self.repos.append(repo["repositoryName"])
-        return self.repos
-
-    def mirror(self, repo):
-        self._prepare_repo(repo.name, repo.desc)
-        self._handle_local_clone(repo.dir, repo.name, repo.https_url)
-        self._push_to_mirror(repo.dir, repo.name)
-
-    def _prepare_repo(self, name, desc=None):
-        if name not in self.get_repos():
-            logger.info("\t* Create AWS repo: {}".format(name))
-            resp = self.client.create_repository(
-                    repositoryName=name,
-                    repositoryDescription=desc or "")
-            return True
-        return False
-
-    def _handle_local_clone(self, repo_dir, name, https_url):
-        if not os.path.exists(repo_dir):
-            logger.info("\t* Creating local bare clone for {}".format(name))
-            os.mkdir(repo_dir)
-            Git().clone("--bare", https_url)
-        else:
-            logger.info("\t* Fetching updates for repository {}".format(name))
-            logger.info(https_url)
-            logger.info(repo_dir)
-            g = Repo(repo_dir).git
-            g.fetch("origin",  "+refs/heads/*:refs/heads/*", "--prune")
-
-    def _push_to_mirror(self, repo_dir, name):
-        logger.info("\t* Mirror local bare clone {}".format(name))
-        g = Repo(repo_dir).git
-        resp = g.push("--mirror",  "https://{user}:{pwd}@git-codecommit.eu-central-1.amazonaws.com/v1/repos/{name}".format(
-                    user=self.user, pwd=self.password, name=name
-        ))
-
-
 class GitSync(object):
 
     def __init__(self, aws_client, args):
-        self.cc = CodeCommit(aws_client, args.cc_user, args.cc_password)
+        self.cc = CodeCommit(aws_client, args.cc_user, args.cc_password, args.prefix)
         self.source = None
 
         within = int(args.pushed_within) if args.pushed_within else None
@@ -211,7 +56,6 @@ class GitSync(object):
         for repo in gl_repos:
             logger.info("Handling {}, last pushed at {}".format(repo.name, repo.last_updated))
             self.cc.mirror(repo)
-            return
 
 
 def main_gitlab():
@@ -242,6 +86,7 @@ def run(parser, required):
     required.add_argument("--cc-user", help="CodeCommit user name", required=True)
     required.add_argument("--cc-password", help="CodeCommit password", required=True)
     parser.add_argument("--dir", help="Working directory")
+    parser.add_argument("--prefix", help="Prefix for CodeCommit repository name.")
     parser.add_argument("--aws-access-key", help="AWS access key")
     parser.add_argument("--aws-secret-access-key", help="AWS secret access key")
     parser.add_argument("--aws-region", help="AWS region", default="eu-central-1")

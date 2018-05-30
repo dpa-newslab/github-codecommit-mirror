@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright 2017 dpa-infocom GmbH
+# Copyright 2017, 2018 dpa-infocom GmbH
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -15,10 +15,10 @@
 # limitations under the License.
 from setuptools import setup, find_packages
 
-version = "0.1.0"
+version = "0.2.0"
 setup(name='github-codecommit-mirror',
     version=version,
-    description='Mirror all repositories of an organization from Github to AWS CodeCommit, including branches.',
+    description='Mirror all repositories of an organization/group from Github or Gitlab to AWS CodeCommit, including branches.',
     classifiers=[
             "Programming Language :: Python :: 3.5",
             'Development Status :: 4 - Beta',
@@ -27,7 +27,7 @@ setup(name='github-codecommit-mirror',
                 "Operating System :: POSIX :: Linux",
                 "Environment :: Console",
             ],
-    keywords=['git','github','codecommit', "mirror", "sync"],
+    keywords=['git','github','gitlab','codecommit', 'mirror', 'sync'],
     author='dpa-infocom GmbH',
     maintainer='Martin Borho',
     maintainer_email='martin@borho.net',

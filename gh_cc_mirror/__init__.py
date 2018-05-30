@@ -19,9 +19,7 @@ import os
 import sys
 import logging
 
-from .codecommit import CodeCommit
-from .github import Github
-from .gitlab import Gitlab
+from .sync import GitSync
 
 # setup logging
 logger = logging.getLogger()
@@ -34,31 +32,7 @@ logging.getLogger('botocore').setLevel(logging.ERROR)
 logging.getLogger('git').setLevel(logging.INFO)
 
 
-class GitSync(object):
-
-    def __init__(self, aws_client, args):
-        self.cc = CodeCommit(aws_client, args.cc_user, args.cc_password, args.prefix)
-        self.source = None
-
-        within = int(args.pushed_within) if args.pushed_within else None
-        if hasattr(args, "gitlab_token"):
-            self.source = Gitlab(
-                args.gitlab_token, args.gitlab_groups, args.gitlab_host, within
-            )
-        elif hasattr(args, "github_token"):
-            self.source = Github(
-                args.github_token, args.github_organization, args.github_user, within
-            )
-        assert self.source is not None
-
-    def run_sync(self):
-        gl_repos = self.source.get_repos()
-        for repo in gl_repos:
-            logger.info("Handling {}, last pushed at {}".format(repo.name, repo.last_updated))
-            self.cc.mirror(repo)
-
-
-def main_gitlab():
+def cmd_gitlab():
     arg_desc = """\n
     This command will mirror all repositories of groups from Gitlab to AWS CodeCommit.
     This script is intended to run as a cronjob, typically.
@@ -68,9 +42,9 @@ def main_gitlab():
     required.add_argument("--gitlab-token", help="Gitlab personal API access token", required=True)
     required.add_argument("--gitlab-groups", help="Gitlab groups, comma-separated string of groupd ids.", required=True)
     parser.add_argument("--gitlab-host", help="Gitlab host, default https://gitlab.com", default="https://gitlab.com")
-    run(parser, required)
+    cmd_run(parser, required)
 
-def main_github():
+def cmd_github():
     arg_desc = """\n
     This command will mirror all repositories of an organization from Github to AWS CodeCommit.
     This script is intended to run as a cronjob, typically.
@@ -80,9 +54,9 @@ def main_github():
     required.add_argument("--github-user", help="Github user account", required=True)
     required.add_argument("--github-token", help="Github personal API access token", required=True)
     required.add_argument("--github-organization", help="Github organization", required=True)
-    run(parser, required)
+    cmd_run(parser, required)
 
-def run(parser, required):
+def cmd_run(parser, required):
     required.add_argument("--cc-user", help="CodeCommit user name", required=True)
     required.add_argument("--cc-password", help="CodeCommit password", required=True)
     parser.add_argument("--dir", help="Working directory")

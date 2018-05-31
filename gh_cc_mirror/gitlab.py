@@ -53,9 +53,8 @@ class Gitlab(object):
             "private-token": self.token,
         }
         for group_id in self.groups:
-            response = requests.get(
-                '{}/api/v4/groups/{}/projects?simple=true'.format(self.host, group_id),
-                headers=headers)
+            call_url = "{}/api/v4/groups/{}/projects?simple=true".format(self.host, group_id)
+            response = requests.get(call_url, headers=headers, timeout=60)
             response.raise_for_status()
             repos = repos + response.json()
 

@@ -1,4 +1,4 @@
-FROM alpine:3.6
+FROM alpine:3.7
 MAINTAINER Martin Borho <martin@borho.net>
 
 ## Install packages required
@@ -21,6 +21,9 @@ COPY . /src
 WORKDIR /src
 
 RUN python3 setup.py install
+RUN mkdir -p /data/gitlab && mkdir /data/github && \
+    chown -R nobody.nobody /data/gitlab && \
+    chown -R nobody.nobody /data/github
 
 # Run the container as 'www-data'
 USER nobody

@@ -9,5 +9,5 @@ fi
 echo "Loading env file from s3 ..."
 eval $(aws --region=eu-central-1 s3 cp $CONFIG_ENV_FILE - | sed 's/^/export /')
 echo "Running ..."
-gh-cc-mirror --github-user=$GH_USER --github-token=$GH_TOKEN --github-organization=$GH_ORG --pushed-within=$PUSHED_WITHIN --cc-user=$CC_USER --cc-password=$CC_PASSWORD --dir=$SYNC_DIR
-
+gh-cc-mirror --github-user=$GH_USER --github-token=$GH_TOKEN --github-organization=$GH_ORG --pushed-within=$PUSHED_WITHIN --cc-user=$CC_USER --cc-password=$CC_PASSWORD --dir=$GH_SYNC_DIR
+gl-cc-mirror --cc-user $CC_USER --cc-password $CC_PASSWORD --gitlab-token $GL_TOKEN --gitlab-groups $GL_GROUPS --dir $GL_SYNC_DIR --prefix $GL_PREFIX --pushed-within=$PUSHED_WITHIN

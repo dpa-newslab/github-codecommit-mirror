@@ -39,7 +39,7 @@ class Gitlab(object):
             # make repo object
             https_url = repo["http_url_to_repo"].replace("https://", "https://gitlab-ci-token:{}@".format(self.token))
             repo_dir = "{}.git".format(repo["name"])
-            desc = "{}\n{}".format(repo["path_with_namespace"], repo["description"])
+            desc = "{}\n{}".format(repo["path_with_namespace"], repo["description"] or "")
 
             result.append(
                 MirrorRepo(repo["name"], desc, repo["last_activity_at"], https_url, repo_dir)

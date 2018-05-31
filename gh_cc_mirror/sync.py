@@ -40,7 +40,10 @@ class GitSync(object):
     def run_sync(self):
         gl_repos = self.source.get_repos()
         for repo in gl_repos:
-            logger.info("Handling {}, last pushed at {}".format(repo.name, repo.last_updated))
-            self.cc.mirror(repo)
+            try:
+                logger.info("Handling {}, last pushed at {}".format(repo.name, repo.last_updated))
+                self.cc.mirror(repo)
+            except Exception as exc:
+                logger.error("Error when handling {}, got {}".format(repo.name, exc))
 
 

@@ -18,7 +18,7 @@ from setuptools import setup, find_packages
 version = "0.2.0"
 setup(name='github-codecommit-mirror',
     version=version,
-    description='Mirror all repositories of an organization/group from Github or Gitlab to AWS CodeCommit, including branches.',
+    description='Mirror all repositories of a Github organization or Gitlab groups to AWS CodeCommit, including branches.',
     classifiers=[
             "Programming Language :: Python :: 3.5",
             'Development Status :: 4 - Beta',
